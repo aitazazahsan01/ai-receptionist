@@ -1,0 +1,8 @@
+# dependencies (installed fresh inside each image)
+node_modules/
+**/node_modules/
+
+# env -- real secrets never belong in an image layer
+.env
+.env.local
+.env.*.local
