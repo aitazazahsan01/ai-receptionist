@@ -15,3 +15,6 @@ within roughly a second of latency per turn.
 3. Your backend forwards that audio into a **voice agent pipeline** that:
    - detects when the caller is speaking (VAD),
    - transcribes speech to text (STT),
+   - feeds the text + conversation history to an LLM that decides what to say/do,
+   - converts the LLM's reply back to speech (TTS),
+   - streams that audio back to the caller through Twilio.
