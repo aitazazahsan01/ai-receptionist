@@ -42,3 +42,7 @@ Caller speaks
 - **STT (Speech-to-Text)**, also called ASR (Automatic Speech Recognition) — converts
   the caller's audio into text. Needs to be *streaming* (returns partial results as
   the person talks) not batch (wait for silence, then transcribe), or your latency
+  budget is blown before the LLM even starts.
+- **LLM** — the "brain." Takes the transcript + conversation history + a system
+  prompt describing the receptionist's job, and produces either a spoken reply or a
+  **tool call** (see §5) like "check calendar availability for Tuesday 2pm."

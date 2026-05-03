@@ -9,3 +9,7 @@ node_modules/
 **/.env
 **/.env.local
 
+# build output (rebuilt inside each image)
+dist/
+**/dist/
+.next/
