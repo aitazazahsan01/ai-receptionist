@@ -46,3 +46,17 @@ Caller speaks
 - **LLM** — the "brain." Takes the transcript + conversation history + a system
   prompt describing the receptionist's job, and produces either a spoken reply or a
   **tool call** (see §5) like "check calendar availability for Tuesday 2pm."
+- **TTS (Text-to-Speech)** — converts the LLM's text reply into audio. Also needs to
+  be streaming: you want to start playing the first sentence while the LLM is still
+  generating the rest, not wait for the whole reply.
+
+There are two ways to implement this pipeline, and it's the single biggest
+architecture decision in this project (see §6).
+
+## 3. Telephony: how a phone call becomes data your code can touch
+
+A regular phone call has nothing to do with the internet by default — it rides on
+the telephone network (PSTN). To get audio out of a phone call and into your
+backend, you need a telephony provider that bridges PSTN ↔ internet. That's what
+**Twilio** is.
+

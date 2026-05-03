@@ -18,3 +18,13 @@ within roughly a second of latency per turn.
    - feeds the text + conversation history to an LLM that decides what to say/do,
    - converts the LLM's reply back to speech (TTS),
    - streams that audio back to the caller through Twilio.
+4. If the caller wants to book an appointment, the LLM calls a **tool** your backend
+   exposes, which checks Google Calendar availability and creates an event.
+5. Every turn of the conversation is transcribed live and pushed to a **Next.js
+   dashboard** so a human can watch the call happen in real time.
+6. If the caller asks for a human, or the AI gets stuck, the call is **transferred** to
+   a real phone number.
+7. After the call, it's saved to Postgres for analytics (call volume, duration, topics,
+   booking conversion, etc).
+
+## Documentation map
