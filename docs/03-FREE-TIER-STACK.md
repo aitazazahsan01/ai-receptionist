@@ -24,3 +24,6 @@ auto-charge when the trial ends.
 
 ## Provider-by-provider detail
 
+### Twilio — telephony
+- $15.15 credit on signup, usable for phone numbers, SMS, and voice minutes at
+  standard rates (~1,000 minutes of outbound calling, or ~1,400 SMS, at typical
