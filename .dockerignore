@@ -1,15 +1,21 @@
-# dependencies (installed fresh inside each image)
-node_modules/
-**/node_modules/
-
-# env -- real secrets never belong in an image layer
-.env
-.env.local
-.env.*.local
-**/.env
-**/.env.local
-
-# build output (rebuilt inside each image)
-dist/
-**/dist/
-.next/
+# dependencies (installed fresh inside each image)
+node_modules/
+**/node_modules/
+
+# env -- real secrets never belong in an image layer
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# build output (rebuilt inside each image)
+dist/
+**/dist/
+.next/
+**/.next/
+out/
+**/out/
+
+# logs
+*.log
