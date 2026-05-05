@@ -13,3 +13,7 @@
     "prisma:studio": "prisma studio",
     "seed": "prisma db seed"
   },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/formbody": "^9.0.0",
+    "@fastify/websocket": "^11.3.0",
