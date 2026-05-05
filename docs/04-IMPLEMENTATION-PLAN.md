@@ -131,3 +131,30 @@ Cloud signup and service account setup to actually run it.)
 
 - Google Cloud project, enable Calendar API, service account with access to one
   shared calendar (simplest auth path for a single-business use case — no user
+  OAuth flow needed). See `docs/03-FREE-TIER-STACK.md` for the exact steps.
+- `apps/backend/src/googleCalendar.ts` — already implemented: service-account
+  auth via `googleapis`, `slotBounds()` (turns a date/time + `BUSINESS_TIMEZONE`
+  into start/end instants using `luxon`), `isSlotFree()` (FreeBusy query),
+  `createCalendarEvent()`.
+- `apps/backend/src/routes/tools.ts` — already implemented:
+  `POST /tools/check-availability` and `POST /tools/book-appointment` (the
+  latter re-checks the slot, creates the calendar event, and writes the
+  `appointments` row in one go, returning `{ booked: false, reason: "slot_taken" }`
+  instead of double-booking if it lost the race).
+- `agent/src/tools.ts` — already implemented: `check_availability` and
+  `book_appointment` tools wired into the agent. `agent/src/agent.ts`'s system
+  prompt is rebuilt fresh per call with the current business-local date/time (via
+  `BUSINESS_TIMEZONE`) so the model can resolve relative dates like "Tuesday
+  afternoon" itself, and is instructed to confirm details before booking.
+- Fill in `apps/backend/.env`'s `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`,
+  `GOOGLE_CALENDAR_ID`, `BUSINESS_TIMEZONE` and `agent/.env`'s matching
+  `BUSINESS_TIMEZONE` to actually run it.
+
+**Done when:** a full call — "I'd like to book an appointment Tuesday afternoon" →
+AI checks availability, proposes a time, confirms, books — produces a real event on
+the test Google Calendar and an `appointments` row.
+
+**Concepts in play:** function calling in a multi-turn flow (state across several
+tool calls within one conversation).
+
+---
