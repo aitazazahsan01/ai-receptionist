@@ -158,3 +158,30 @@ the test Google Calendar and an `appointments` row.
 tool calls within one conversation).
 
 ---
+
+### Phase 6 — Live transcription & analytics pipeline
+**Goal:** the Next.js dashboard shows a call happening in real time, and call
+history/analytics after the fact. (Code for this phase is already written —
+see below — what's left is running it against real infra to see it work
+end-to-end.)
+
+- `apps/backend/src/events.ts` — already implemented: `publishEvent()` publishes
+  typed events (`call.started`, `call.ended`, `transcript.partial`,
+  `transcript.final`, `appointment.booked`) to a single Redis pub/sub channel.
+  Wired into `routes/twilio.ts` (call lifecycle) and `routes/tools.ts`
+  (transcript logging, appointment booking).
+- `agent/src/agent.ts` — already implemented: reads the LiveKit SIP
+  participant's `sip.twilio.callSid` attribute (`ctx.waitForParticipant()`,
+  called after `ctx.connect()`) -- but that's the CallSid of the `<Dial><Sip>`
+  **child** leg Twilio created to reach LiveKit, not the original inbound call
+  `/twilio/incoming-call` recorded. The agent calls a new
+  `POST /tools/resolve-call` endpoint once per call, which uses the Twilio
+  REST API to look up that child call's `parentCallSid` and resolve it to our
+  internal `calls.id`; every later tool call and transcript entry just passes
+  that resolved `callId` along. `wireTranscriptLogging()` listens for
+  `AgentSessionEventTypes.UserInputTranscribed` (live partial captions) and
+  `ConversationItemAdded` (finalized turns, both caller and agent) and pushes
+  them to a new, non-LLM-callable `POST /tools/log-transcript` endpoint.
+- `apps/backend/src/routes/dashboard.ts` — already implemented:
+  `GET /dashboard/live` (a `@fastify/websocket` route) opens a dedicated Redis
+  subscriber per connected browser and forwards every published event as-is.
