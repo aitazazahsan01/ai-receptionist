@@ -36,3 +36,42 @@ services:
       context: ..
       dockerfile: apps/backend/Dockerfile
     container_name: ai-receptionist-backend
+    restart: unless-stopped
+    # Provider secrets, Twilio/LiveKit/Google credentials, etc. -- copy
+    # apps/backend/.env.example to apps/backend/.env and fill it in first.
+    env_file:
+      - ../apps/backend/.env
+    environment:
+      # In-network hostnames override whatever apps/backend/.env has for local
+      # (non-Docker) dev -- everything else in that file (API keys, Twilio
+      # creds, PUBLIC_BASE_URL, DASHBOARD_ORIGIN) is used as-is.
+      PORT: "4000"
+      DATABASE_URL: postgresql://receptionist:receptionist@postgres:5432/ai_receptionist
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  agent:
+    build:
+      context: ..
+      dockerfile: agent/Dockerfile
+    container_name: ai-receptionist-agent
+    restart: unless-stopped
+    # LiveKit/Groq/Deepgram/ElevenLabs credentials -- copy agent/.env.example
+    # to agent/.env and fill it in first. Must set the same
+    # INTERNAL_TOOLS_SECRET and BUSINESS_TIMEZONE as apps/backend/.env.
+    env_file:
+      - ../agent/.env
+    environment:
+      # Server-to-server call, not browser-facing -- the in-network hostname
+      # overrides whatever agent/.env has for local (non-Docker) dev.
+      BACKEND_URL: http://backend:4000
+    depends_on:
+      backend:
+        condition: service_healthy
+
