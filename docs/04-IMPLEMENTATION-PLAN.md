@@ -185,3 +185,150 @@ end-to-end.)
 - `apps/backend/src/routes/dashboard.ts` — already implemented:
   `GET /dashboard/live` (a `@fastify/websocket` route) opens a dedicated Redis
   subscriber per connected browser and forwards every published event as-is.
+- `apps/backend/src/routes/api.ts` — already implemented: `GET /api/calls`
+  (history list), `GET /api/calls/:id` (transcript + appointments for one
+  call), `GET /api/analytics` (call count, average duration, booking
+  conversion rate). CORS-gated to `DASHBOARD_ORIGIN`.
+- `apps/web/src/app/{live,calls,analytics}` — already implemented: `/live` is a
+  Client Component that opens the dashboard WebSocket and renders each active
+  call's transcript scrolling in live (partial captions shown dimmed until
+  finalized); `/calls` and `/calls/[id]` are Server Components reading
+  `/api/calls*`; `/analytics` reads `/api/analytics`.
+- Fill in `apps/backend/.env`'s `DASHBOARD_ORIGIN` (defaults to
+  `http://localhost:3000`, so only needed if the dashboard runs elsewhere) and
+  `apps/web/.env`'s `NEXT_PUBLIC_BACKEND_URL` to actually run it.
+
+**Done when:** you can call the number from your phone and watch the transcript
+appear live in a browser tab, and see the call show up in history afterward.
+
+**Concepts in play:** event-driven architecture, Redis pub/sub, WebSockets end-to-end
+(§7 of concepts doc).
+
+---
+
+### Phase 7 — Human handoff
+**Goal:** `transfer_to_human` (stubbed in Phase 4) actually transfers the call.
+(Code for this phase is already written — see below.)
+
+- `apps/backend/src/twilioClient.ts` — already implemented: a shared Twilio
+  REST client (account-level API calls), distinct from the
+  `twilio.twiml.VoiceResponse` builder `routes/twilio.ts` uses for webhook
+  responses.
+- `POST /tools/transfer-to-human` — already implemented for real: looks up the
+  call's original `twilioCallSid` (the parent leg, exactly what
+  `/twilio/incoming-call` recorded — no further resolution needed there),
+  builds TwiML (`<Say>` an acknowledgment, then `<Dial>` to
+  `HUMAN_TRANSFER_NUMBER`), and calls `twilioClient.calls(sid).update({twiml})`
+  to redirect the *live* call. The `<Say>` matters: the redirect can land
+  mid-sentence from the agent's own spoken reply, so it's the caller's only
+  reliable acknowledgment that a transfer is happening. Updates
+  `calls.outcome`/`transferred_to` and publishes a `call.transferred` event
+  (dashboard's live view shows it).
+- Trigger conditions implemented: explicit caller request, or repeated AI
+  misunderstanding, per the system prompt in `agent/src/agent.ts` (the model
+  decides when to call the tool). A manual "take over" button on the
+  dashboard's live view was **not** built — it would need its own
+  authenticated endpoint and isn't needed for the "AI handles it, falls back
+  to a human when it can't" flow this project targets; add it later if a
+  human operator needs to preempt the AI proactively, not just receive its
+  handoffs.
+- Fill in `apps/backend/.env`'s `HUMAN_TRANSFER_NUMBER` (a real phone number
+  you control, E.164 format) to actually run it. If unset, the tool logs the
+  request but doesn't transfer, so nothing breaks with it left blank.
+
+**Done when:** saying "I want to speak to a human" mid-call actually rings your
+second phone number and connects it to the live call.
+
+**Concepts in play:** Twilio call control beyond the initial webhook (mid-call
+modification).
+
+---
+
+### Phase 8 — Hardening & full containerization
+**Goal:** the whole system runs with one command, and survives obvious failure
+modes. (Code for this phase is already written — see below — what's left is
+actually running `docker compose up` on a machine that has Docker, which this
+one doesn't.)
+
+- `infra/docker-compose.yml` — already implemented: `backend`, `agent`, and
+  `web` services added alongside the existing `postgres`/`redis`, each with
+  its own multi-stage `Dockerfile` (`apps/backend/Dockerfile`,
+  `agent/Dockerfile`, `apps/web/Dockerfile`). Build context is the repo root
+  for all three (so a shared root `.dockerignore` applies); each `env_file`s
+  its own app's `.env`, with in-network hostnames (`postgres`, `redis`,
+  `backend`) overriding whatever that `.env` has for local non-Docker dev.
+  `apps/web/next.config.ts` sets `output: "standalone"` for a minimal
+  production image. The backend's `Dockerfile` runs `prisma migrate deploy`
+  on every container start (a no-op once nothing's pending) and has a
+  `HEALTHCHECK` other services key off via `depends_on: condition:
+  service_healthy`.
+- `apps/backend/prisma/migrations/` — already implemented: since this
+  machine never had a live Postgres to run `prisma migrate dev` against, the
+  initial migration SQL was instead generated schema-to-schema via `npx prisma
+  migrate diff --from-empty --to-schema=prisma/schema.prisma --script`, which
+  needs no database connection. It's the same SQL `migrate dev` would have
+  produced. Worth a sanity check the first time `docker compose up` actually
+  runs it against a real Postgres.
+- Error handling for the failure modes that will actually occur:
+  - Twilio webhook retries — already handled since Phase 2 (`upsert` on
+    `twilio_call_sid`, `.catch()` on the call-status update).
+  - Google Calendar API errors — already handled since Phase 5 (try/catch in
+    `googleCalendar.ts` callers, surfaced as a clean 422 with a message the
+    agent can relay to the caller).
+  - STT/TTS/LLM provider timeouts or rate-limit errors (a real risk on the
+    free tiers this project runs on — see `03-FREE-TIER-STACK.md`) — now
+    logged instead of vanishing silently: `agent.ts`'s `wireErrorLogging()`
+    listens for `AgentSessionEventTypes.Error` and logs it tagged with the
+    call's correlation id.
+  - A call that hangs up mid-tool-call — no special handling added; a
+    dropped connection just means the in-flight backend request's result
+    never reaches an agent that's no longer there, which is harmless (worst
+    case, an orphaned calendar event with no caller to confirm it to).
+- Structured logging per call — `routes/twilio.ts` and `routes/tools.ts` now
+  log key lifecycle events (`call started`, `call ended`, `appointment
+  booked`, `transferred call`) with `callId`/`twilioCallSid` attached, and
+  `agent.ts`'s error logging is tagged the same way, so a call's whole story
+  is greppable by one id across both processes' logs.
+- Basic security review: webhook signature validation (done since Phase 2),
+  secrets in env vars only (done throughout), dashboard behind basic auth --
+  **deliberately not built**. The plan's own wording makes this conditional
+  ("if it'll ever be reachable from the internet"), and building it properly
+  runs into a real constraint worth knowing about before attempting it: the
+  browser's native `WebSocket` API can't attach an `Authorization` header, so
+  HTTP Basic Auth on `/dashboard/live` wouldn't actually be reachable from the
+  `/live` page as written -- it would need a token-in-query-param scheme (or
+  swapping Basic Auth for something else) instead, sized to whatever the
+  actual deployment target turns out to be. Revisit this once there's a real
+  answer to "where does the dashboard get deployed."
+
+**Done when:** `docker compose up` from a clean checkout gets a fully working
+system (given `.env` filled in), and killing/restarting any one container mid-call
+fails gracefully rather than corrupting data.
+
+---
+
+### Phase 9 (stretch) — Production path
+Not required to call the project "done," but the natural next steps once Phases
+0-8 work and you're ready to spend real money or go live:
+
+- Swap the free-tier providers for paid equivalents where free-tier limits actually
+  bit you (most likely: ElevenLabs character quota, or Groq rate limits under
+  concurrent calls).
+- Optionally implement the OpenAI Realtime API as an alternative `agent/`
+  implementation (see `03-FREE-TIER-STACK.md`'s "upgrade path" note) and compare it
+  against the modular pipeline on latency and cost.
+- Multi-tenant support if this needs to serve more than one business (auth,
+  per-tenant phone numbers/calendars).
+- Move Postgres/Redis off Docker Compose onto managed hosting (Neon/Upstash or
+  equivalent) and deploy the backend/agent/dashboard somewhere reachable
+  (Fly.io, Railway, Render all have reasonable free/hobby tiers as of 2026 — verify
+  current terms the way `03-FREE-TIER-STACK.md` does before relying on them).
+
+---
+
+## How to actually work through this with me
+
+Tell me which phase you want to start on (Phase 0 is the natural start), and we'll
+build it step by step — I'll write the actual code with you, explain each new
+concept as it shows up in real code rather than in the abstract, and we'll test each
+phase's "done when" criteria together before moving on.
