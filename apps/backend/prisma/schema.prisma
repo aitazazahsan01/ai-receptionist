@@ -29,3 +29,6 @@ model Call {
   twilioCallSid  String       @unique @map("twilio_call_sid")
   callerNumber   String       @map("caller_number")
   startedAt      DateTime     @map("started_at")
+  endedAt        DateTime?    @map("ended_at")
+  durationSec    Int?         @map("duration_sec")
+  outcome        CallOutcome?
