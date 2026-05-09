@@ -26,3 +26,20 @@ CREATE TABLE "calls" (
 
 -- CreateTable
 CREATE TABLE "transcript_entries" (
+    "id" TEXT NOT NULL,
+    "call_id" TEXT NOT NULL,
+    "speaker" "Speaker" NOT NULL,
+    "text" TEXT NOT NULL,
+    "spoken_at" TIMESTAMP(3) NOT NULL,
+    "sequence" INTEGER NOT NULL,
+
+    CONSTRAINT "transcript_entries_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "appointments" (
+    "id" TEXT NOT NULL,
+    "call_id" TEXT,
+    "google_event_id" TEXT,
+    "caller_name" TEXT,
+    "caller_phone" TEXT,
