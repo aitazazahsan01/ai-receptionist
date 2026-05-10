@@ -75,3 +75,23 @@ services:
       backend:
         condition: service_healthy
 
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the browser bundle at build time -- localhost is correct
+        # when accessing the dashboard from the same machine running `docker
+        # compose up`. Override with --build-arg for a remote deployment.
+        NEXT_PUBLIC_BACKEND_URL: http://localhost:4000
+    container_name: ai-receptionist-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
