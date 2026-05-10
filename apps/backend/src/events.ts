@@ -12,3 +12,8 @@ export type CallEvent =
       type: "transcript.partial";
       callId: string;
       speaker: "caller" | "agent";
+      text: string;
+      createdAt: string;
+    }
+  | {
+      type: "transcript.final";
