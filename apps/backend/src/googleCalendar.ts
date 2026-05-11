@@ -22,3 +22,5 @@ export function slotBounds(date: string, time: string): { start: DateTime; end: 
   }
   return { start, end: start.plus({ minutes: APPOINTMENT_MINUTES }) };
 }
+
+export async function isSlotFree(start: DateTime, end: DateTime): Promise<boolean> {
