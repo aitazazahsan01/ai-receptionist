@@ -18,3 +18,27 @@ export async function apiRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const call = await prisma.call.findUnique({
       where: { id },
+      include: {
+        transcriptEntries: { orderBy: { sequence: "asc" } },
+        appointments: true,
+      },
+    });
+
+    if (!call) {
+      reply.code(404);
+      return { error: "not found" };
+    }
+    return { call };
+  });
+
+  app.get("/api/analytics", async () => {
+    const [totalCalls, bookedAppointments, avgDuration] = await Promise.all([
+      prisma.call.count(),
+      prisma.appointment.count({ where: { status: "confirmed" } }),
+      prisma.call.aggregate({
+        _avg: { durationSec: true },
+        where: { durationSec: { not: null } },
+      }),
+    ]);
+
+    return {
