@@ -24,3 +24,37 @@ export function slotBounds(date: string, time: string): { start: DateTime; end: 
 }
 
 export async function isSlotFree(start: DateTime, end: DateTime): Promise<boolean> {
+  const calendar = getCalendarClient();
+  const res = await calendar.freebusy.query({
+    requestBody: {
+      timeMin: start.toISO() ?? undefined,
+      timeMax: end.toISO() ?? undefined,
+      items: [{ id: CALENDAR_ID }],
+    },
+  });
+  const busy = res.data.calendars?.[CALENDAR_ID]?.busy ?? [];
+  return busy.length === 0;
+}
+
+export async function createCalendarEvent(opts: {
+  start: DateTime;
+  end: DateTime;
+  callerName: string;
+  callerPhone: string;
+}): Promise<string> {
+  const calendar = getCalendarClient();
+  const res = await calendar.events.insert({
+    calendarId: CALENDAR_ID,
+    requestBody: {
+      summary: `Appointment: ${opts.callerName}`,
+      description: `Booked via AI receptionist. Caller phone: ${opts.callerPhone}`,
+      start: { dateTime: opts.start.toISO() ?? undefined, timeZone: TIMEZONE },
+      end: { dateTime: opts.end.toISO() ?? undefined, timeZone: TIMEZONE },
+    },
+  });
+  const eventId = res.data.id;
+  if (!eventId) {
+    throw new Error("Google Calendar did not return an event id");
+  }
+  return eventId;
+}
