@@ -8,3 +8,20 @@ import { redis } from "../redis";
 // isn't worth the complexity yet (see docs/02-ARCHITECTURE.md Phase 6 note).
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get("/dashboard/live", { websocket: true }, (socket) => {
+    const subscriber = redis.duplicate();
+
+    subscriber.subscribe(EVENTS_CHANNEL).catch((err) => {
+      app.log.error(err, "dashboard websocket: failed to subscribe to call-events");
+      socket.close();
+    });
+
+    subscriber.on("message", (_channel, message) => {
+      socket.send(message);
+    });
+
+    socket.on("close", () => {
+      subscriber.unsubscribe(EVENTS_CHANNEL).catch(() => {});
+      subscriber.quit().catch(() => {});
+    });
+  });
+}
