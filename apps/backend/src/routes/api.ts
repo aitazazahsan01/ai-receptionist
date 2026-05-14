@@ -42,3 +42,10 @@ export async function apiRoutes(app: FastifyInstance) {
     ]);
 
     return {
+      totalCalls,
+      bookedAppointments,
+      avgDurationSec: avgDuration._avg.durationSec,
+      bookingConversionRate: totalCalls > 0 ? bookedAppointments / totalCalls : 0,
+    };
+  });
+}
