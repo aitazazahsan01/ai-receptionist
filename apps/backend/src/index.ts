@@ -18,3 +18,16 @@ async function main() {
   await app.register(websocket);
   // Only the dashboard's own origin needs to read /api/* and /dashboard/live --
   // everything else (Twilio, the agent worker) talks to this backend server-to-server.
+  await app.register(cors, { origin: process.env.DASHBOARD_ORIGIN ?? "http://localhost:3000" });
+
+  app.get("/health", async () => {
+    return { status: "ok", service: "ai-receptionist-backend" };
+  });
+
+  // Separate from /health so container orchestration can distinguish
+  // "process is up" from "process is up AND its dependencies are up."
+  app.get("/health/deps", async (_req, reply) => {
+    const [dbOk, redisOk] = await Promise.all([
+      pingDb().catch(() => false),
+      pingRedis().catch(() => false),
+    ]);

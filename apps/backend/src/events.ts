@@ -17,3 +17,21 @@ export type CallEvent =
     }
   | {
       type: "transcript.final";
+      callId: string;
+      speaker: "caller" | "agent";
+      text: string;
+      createdAt: string;
+    }
+  | {
+      type: "appointment.booked";
+      callId: string | null;
+      appointmentId: string;
+      start: string;
+      end: string;
+      createdAt: string;
+    }
+  | { type: "call.transferred"; callId: string; transferredTo: string; createdAt: string };
+
+export async function publishEvent(event: CallEvent): Promise<void> {
+  await redis.publish(EVENTS_CHANNEL, JSON.stringify(event));
+}
