@@ -16,3 +16,32 @@ const faqs = [
   {
     question: "Do you accept walk-ins?",
     answer: "We prefer scheduled appointments, but we'll do our best to fit you in.",
+    topic: "booking",
+  },
+  {
+    question: "How do I cancel an appointment?",
+    answer: "Call us at least 24 hours in advance and we'll cancel it for you, no fee.",
+    topic: "booking",
+  },
+  {
+    question: "Do you offer virtual appointments?",
+    answer: "Yes, just let us know when booking and we'll send a video call link.",
+    topic: "booking",
+  },
+];
+
+async function main() {
+  for (const faq of faqs) {
+    await prisma.faq.create({ data: faq });
+  }
+  console.log(`Seeded ${faqs.length} FAQs.`);
+}
+
+main()
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
