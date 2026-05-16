@@ -93,3 +93,147 @@ export async function toolsRoutes(app: FastifyInstance) {
       }
 
       // Redirecting the ORIGINAL inbound call (not the SIP child leg) is what
+      // actually moves the caller -- this interrupts its in-progress
+      // <Dial><Sip> and replaces it with new TwiML. The redirect can land
+      // mid-sentence from the agent's perspective (its own spoken reply may
+      // not make it out before the SIP leg drops), so <Say> here is the
+      // caller's only *reliable* acknowledgment that a transfer is happening.
+      const response = new VoiceResponse();
+      response.say("Transferring you to a team member now.");
+      response.dial(humanNumber);
+      await twilioClient.calls(call.twilioCallSid).update({ twiml: response.toString() });
+
+      await prisma.call.update({
+        where: { id: callId },
+        data: { outcome: "transferred", transferredTo: humanNumber },
+      });
+
+      await publishEvent({
+        type: "call.transferred",
+        callId,
+        transferredTo: humanNumber,
+        createdAt: new Date().toISOString(),
+      }).catch((err) => app.log.error(err, "failed to publish call.transferred"));
+
+      app.log.info({ reason, callId }, "transferred call to human");
+      return { status: "transferred" };
+    } catch (err) {
+      app.log.error(err, "transfer-to-human failed");
+      reply.code(500);
+      return {
+        status: "not_transferred",
+        error: err instanceof Error ? err.message : "unknown error",
+      };
+    }
+  });
+
+  // Not an LLM-callable tool -- the agent pushes every finalized conversation
+  // turn here (see agent/src/agent.ts's wireTranscriptLogging) so it can be
+  // persisted and broadcast to the live dashboard. Partial (isFinal: false)
+  // entries are published for live captions but never written to Postgres.
+  app.post("/tools/log-transcript", async (req, reply) => {
+    const { callId, speaker, text, isFinal } = req.body as {
+      callId?: string;
+      speaker?: "caller" | "agent";
+      text?: string;
+      isFinal?: boolean;
+    };
+    if (!speaker || !text) {
+      reply.code(400);
+      return { error: "speaker and text are required" };
+    }
+
+    const createdAt = new Date().toISOString();
+
+    if (isFinal && callId) {
+      const sequence = await prisma.transcriptEntry.count({ where: { callId } });
+      await prisma.transcriptEntry.create({
+        data: { callId, speaker, text, spokenAt: new Date(), sequence },
+      });
+    }
+
+    if (callId) {
+      await publishEvent({
+        type: isFinal ? "transcript.final" : "transcript.partial",
+        callId,
+        speaker,
+        text,
+        createdAt,
+      }).catch((err) => app.log.error(err, "failed to publish transcript event"));
+    }
+
+    return { ok: true, persisted: Boolean(isFinal && callId) };
+  });
+
+  app.post("/tools/check-availability", async (req, reply) => {
+    const { date, time } = req.body as { date?: string; time?: string };
+    if (!date || !time) {
+      reply.code(400);
+      return { error: "date and time are required" };
+    }
+
+    try {
+      const { start, end } = slotBounds(date, time);
+      const available = await isSlotFree(start, end);
+      return { available, start: start.toISO(), end: end.toISO() };
+    } catch (err) {
+      app.log.error(err, "check-availability failed");
+      reply.code(422);
+      return { error: err instanceof Error ? err.message : "invalid request" };
+    }
+  });
+
+  app.post("/tools/book-appointment", async (req, reply) => {
+    const { date, time, callerName, callerPhone, callId } = req.body as {
+      date?: string;
+      time?: string;
+      callerName?: string;
+      callerPhone?: string;
+      callId?: string;
+    };
+    if (!date || !time || !callerName || !callerPhone) {
+      reply.code(400);
+      return { error: "date, time, callerName, and callerPhone are required" };
+    }
+
+    try {
+      const { start, end } = slotBounds(date, time);
+      const available = await isSlotFree(start, end);
+      if (!available) {
+        return { booked: false, reason: "slot_taken" };
+      }
+
+      const googleEventId = await createCalendarEvent({ start, end, callerName, callerPhone });
+      const appointment = await prisma.appointment.create({
+        data: {
+          callId: callId ?? null,
+          googleEventId,
+          callerName,
+          callerPhone,
+          scheduledStart: start.toJSDate(),
+          scheduledEnd: end.toJSDate(),
+        },
+      });
+
+      app.log.info(
+        { callId, appointmentId: appointment.id, start: start.toISO() },
+        "appointment booked",
+      );
+
+      await publishEvent({
+        type: "appointment.booked",
+        callId: callId ?? null,
+        appointmentId: appointment.id,
+        start: start.toISO() ?? start.toString(),
+        end: end.toISO() ?? end.toString(),
+        createdAt: new Date().toISOString(),
+      }).catch((err) => app.log.error(err, "failed to publish appointment.booked"));
+
+      return { booked: true, appointmentId: appointment.id, start: start.toISO(), end: end.toISO() };
+    } catch (err) {
+      app.log.error(err, "book-appointment failed");
+      reply.code(422);
+      return { booked: false, error: err instanceof Error ? err.message : "invalid request" };
+    }
+  });
+}
