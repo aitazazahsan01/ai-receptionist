@@ -43,3 +43,71 @@ export async function twilioRoutes(app: FastifyInstance) {
       },
     });
 
+    app.log.info({ callId: call.id, twilioCallSid: callSid, from, to }, "call started");
+
+    await publishEvent({
+      type: "call.started",
+      callId: call.id,
+      callerNumber: from,
+      createdAt: new Date().toISOString(),
+    }).catch((err) => app.log.error(err, "failed to publish call.started"));
+
+    const response = new VoiceResponse();
+    const dial = response.dial();
+    dial.sip(
+      {
+        username: process.env.LIVEKIT_SIP_USERNAME ?? "",
+        password: process.env.LIVEKIT_SIP_PASSWORD ?? "",
+        statusCallback: `${process.env.PUBLIC_BASE_URL}/twilio/call-status`,
+        statusCallbackEvent: ["completed"],
+        statusCallbackMethod: "POST",
+      },
+      sipUri(to),
+    );
+
+    reply.type("text/xml").send(response.toString());
+  });
+
+  // Fired when the SIP leg (the whole call, since it's the only leg we dial)
+  // ends -- this is our signal to close out the call record.
+  app.post("/twilio/call-status", async (req: FastifyRequest, reply) => {
+    if (!isValidTwilioRequest(req)) {
+      app.log.warn("Rejected /twilio/call-status: invalid or missing Twilio signature");
+      reply.code(403);
+      return;
+    }
+
+    const body = req.body as Record<string, string>;
+    // Twilio's docs are inconsistent about whether a <Sip> leg's status
+    // callback reports the original call under CallSid or ParentCallSid --
+    // try both rather than assuming.
+    const callSid = body.ParentCallSid || body.CallSid;
+    const callDuration = body.DialCallDuration ?? body.CallDuration;
+
+    if (callSid) {
+      await prisma.call
+        .update({
+          where: { twilioCallSid: callSid },
+          data: {
+            endedAt: new Date(),
+            durationSec: callDuration ? Number(callDuration) : null,
+          },
+        })
+        .then((call) => {
+          app.log.info(
+            { callId: call.id, twilioCallSid: callSid, durationSec: call.durationSec },
+            "call ended",
+          );
+          return publishEvent({
+            type: "call.ended",
+            callId: call.id,
+            durationSec: call.durationSec,
+            createdAt: new Date().toISOString(),
+          });
+        })
+        .catch((err) => app.log.error(err, "failed to close out call record"));
+    }
+
+    reply.code(204).send();
+  });
+}
