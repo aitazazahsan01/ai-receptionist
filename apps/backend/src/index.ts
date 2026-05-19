@@ -31,3 +31,22 @@ async function main() {
       pingDb().catch(() => false),
       pingRedis().catch(() => false),
     ]);
+
+    const ok = dbOk && redisOk;
+    reply.code(ok ? 200 : 503);
+    return { postgres: dbOk, redis: redisOk };
+  });
+
+  await app.register(twilioRoutes);
+  await app.register(toolsRoutes);
+  await app.register(dashboardRoutes);
+  await app.register(apiRoutes);
+
+  const port = Number(process.env.PORT ?? 4000);
+  await app.listen({ port, host: "0.0.0.0" });
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
