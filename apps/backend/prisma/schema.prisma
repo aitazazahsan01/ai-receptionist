@@ -32,3 +32,48 @@ model Call {
   endedAt        DateTime?    @map("ended_at")
   durationSec    Int?         @map("duration_sec")
   outcome        CallOutcome?
+  transferredTo  String?      @map("transferred_to")
+
+  transcriptEntries TranscriptEntry[]
+  appointments      Appointment[]
+
+  @@map("calls")
+}
+
+model TranscriptEntry {
+  id        String   @id @default(uuid())
+  callId    String   @map("call_id")
+  speaker   Speaker
+  text      String
+  spokenAt  DateTime @map("spoken_at")
+  sequence  Int
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@map("transcript_entries")
+}
+
+model Appointment {
+  id              String            @id @default(uuid())
+  callId          String?           @map("call_id")
+  googleEventId   String?           @map("google_event_id")
+  callerName      String?           @map("caller_name")
+  callerPhone     String?           @map("caller_phone")
+  scheduledStart  DateTime          @map("scheduled_start")
+  scheduledEnd    DateTime          @map("scheduled_end")
+  status          AppointmentStatus @default(confirmed)
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  call Call? @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  @@map("appointments")
+}
+
+model Faq {
+  id       String  @id @default(uuid())
+  question String
+  answer   String
+  topic    String?
+
+  @@map("faqs")
+}
