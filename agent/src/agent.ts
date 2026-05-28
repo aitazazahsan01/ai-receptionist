@@ -68,3 +68,109 @@ function wireTranscriptLogging(session: voice.AgentSession, callId: string | nul
     isFinal: boolean;
   }) => {
     callBackendTool("/tools/log-transcript", { callId, ...body }).catch((err) =>
+      console.error("Failed to log transcript entry", err),
+    );
+  };
+
+  session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
+    if (ev.isFinal) return; // finalized turns are logged via conversation_item_added below
+    logTranscript({ speaker: "caller", text: ev.transcript, isFinal: false });
+  });
+
+  session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
+    if (ev.item.type !== "message") return; // skip agent-handoff items, not used here
+    const text = ev.item.textContent;
+    if (!text) return;
+    logTranscript({
+      speaker: ev.item.role === "assistant" ? "agent" : "caller",
+      text,
+      isFinal: true,
+    });
+  });
+}
+
+// Without this, a transient STT/TTS/LLM provider error (timeout, rate limit --
+// a real risk on the free tiers this project runs on, see
+// docs/03-FREE-TIER-STACK.md) fails silently: the session just stops
+// responding with nothing in the logs to explain why. `callId` (or the raw
+// room name as a fallback) makes the log line greppable back to one call.
+function wireErrorLogging(
+  session: voice.AgentSession,
+  callId: string | null,
+  roomName: string | undefined,
+) {
+  const correlation = callId ?? `room:${roomName}`;
+  session.on(voice.AgentSessionEventTypes.Error, (ev) => {
+    console.error(`[${correlation}] agent session error:`, ev.error);
+  });
+}
+
+function buildLlm() {
+  // Groq's free tier, via its OpenAI-compatible endpoint -- see
+  // docs/03-FREE-TIER-STACK.md. Swap for a hosted OpenAI/Anthropic model later
+  // by dropping baseURL/apiKey once there's paid budget; nothing else changes.
+  return new openai.LLM({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: "https://api.groq.com/openai/v1",
+    model: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b",
+  });
+}
+
+export default defineAgent({
+  // Runs once per worker process, not per call -- loading the VAD model here
+  // instead of in `entry` avoids paying that cost on every incoming call.
+  prewarm: async (proc: JobProcess) => {
+    proc.userData.vad = await silero.VAD.load();
+  },
+
+  // Runs once per call, when the agent is dispatched into a room.
+  entry: async (ctx: JobContext) => {
+    const vad = ctx.proc.userData.vad as silero.VAD;
+
+    // Connect before reading participant info -- the SIP participant (the
+    // caller) doesn't exist in the room until the agent has joined it.
+    await ctx.connect();
+
+    // LiveKit's Twilio SIP integration surfaces the originating call's Twilio
+    // CallSid as a participant attribute -- but it's the CallSid of the
+    // <Dial><Sip> CHILD leg Twilio created to reach LiveKit, not the original
+    // inbound call the backend recorded from the incoming-call webhook. Ask
+    // the backend to resolve the real parent and hand back our internal
+    // `calls.id`, once per call, so every tool call below can just pass that
+    // instead of re-resolving it every time. Absent outside real Twilio calls
+    // (e.g. local `lk agent console` testing) or if resolution fails, in
+    // which case it's simply null -- tool calls still work, just without a
+    // linked call row.
+    const participant = await ctx.waitForParticipant();
+    const twilioCallSid = participant.attributes["sip.twilio.callSid"];
+    const { callId } = await callBackendTool<{ callId: string | null }>("/tools/resolve-call", {
+      twilioCallSid,
+    }).catch(() => ({ callId: null }));
+
+    const session = new voice.AgentSession({
+      vad,
+      stt: new deepgram.STT(),
+      llm: buildLlm(),
+      tts: new elevenlabs.TTS(),
+    });
+
+    wireTranscriptLogging(session, callId);
+    wireErrorLogging(session, callId, ctx.room.name);
+
+    await session.start({
+      agent: buildAgent(callId),
+      room: ctx.room,
+    });
+
+    session.generateReply({
+      instructions: "Greet the caller as the business's receptionist and ask how you can help.",
+    });
+  },
+});
+
+cli.runApp(
+  new ServerOptions({
+    agent: fileURLToPath(import.meta.url),
+    agentName: "ai-receptionist",
+  }),
+);
