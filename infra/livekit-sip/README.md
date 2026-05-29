@@ -25,3 +25,45 @@ lk sip inbound create infra/livekit-sip/inbound-trunk.json \
   --auth-user <choose-a-username> \
   --auth-pass <choose-a-strong-password>
 ```
+
+Pick your own username/password here — these are what Twilio will authenticate
+with when it dials into LiveKit. Put the same values in `apps/backend/.env` as
+`LIVEKIT_SIP_USERNAME` / `LIVEKIT_SIP_PASSWORD`.
+
+The command's output includes the trunk's SIP URI/host (something like
+`<your-project>.sip.livekit.cloud`) — put that in `apps/backend/.env` as
+`LIVEKIT_SIP_HOST`.
+
+## 2. Create the dispatch rule
+
+```sh
+lk sip dispatch create infra/livekit-sip/dispatch-rule.json
+```
+
+This tells LiveKit: for each inbound SIP call, create a fresh room (prefixed
+`call-`) and dispatch the registered agent worker into it. No changes needed
+per-call — this runs once and applies to every future call through the trunk.
+
+## 3. Point the Twilio number at our backend
+
+In the Twilio console, under the phone number's Voice Configuration, set "A
+call comes in" to a webhook pointing at:
+
+```
+<PUBLIC_BASE_URL>/twilio/incoming-call
+```
+
+(`PUBLIC_BASE_URL` is your backend's public URL — an ngrok tunnel in dev.) This
+is deliberately our own webhook rather than a static Twilio TwiML Bin, so we
+still get Twilio-signature validation and a `calls` row created per call before
+handing off to LiveKit.
+
+## Sanity check
+
+Call the Twilio number. You should hear silence-then-connect (no more `<Say>`
+greeting — the agent worker speaks first once dispatched, per
+`agent/src/agent.ts`). If nothing happens, check in order: the agent worker is
+running (`npm run dev` in `agent/`), the trunk's numbers array matches the
+dialed number exactly, and the backend logs show `/twilio/incoming-call` was
+hit with a 200 (not a 403 — that means signature validation failed, usually a
+`PUBLIC_BASE_URL` mismatch).

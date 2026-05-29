@@ -16,3 +16,32 @@ export default async function CallsPage() {
               <th className="py-2 pr-4">Caller</th>
               <th className="py-2 pr-4">Started</th>
               <th className="py-2 pr-4">Duration</th>
+              <th className="py-2 pr-4">Outcome</th>
+            </tr>
+          </thead>
+          <tbody>
+            {calls.map((call) => (
+              <tr key={call.id} className="border-b border-foreground/5">
+                <td className="py-2 pr-4">
+                  <Link href={`/calls/${call.id}`} className="hover:underline">
+                    {call.callerNumber}
+                  </Link>
+                </td>
+                <td className="py-2 pr-4">{new Date(call.startedAt).toLocaleString()}</td>
+                <td className="py-2 pr-4">{formatDuration(call.durationSec)}</td>
+                <td className="py-2 pr-4">{call.outcome ?? "-"}</td>
+              </tr>
+            ))}
+            {calls.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-6 text-center text-foreground/50">
+                  No calls yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
