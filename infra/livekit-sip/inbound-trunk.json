@@ -1,2 +1,6 @@
 {
   "trunk": {
+    "name": "AI Receptionist inbound trunk",
+    "numbers": ["+1XXXXXXXXXX"]
+  }
+}
