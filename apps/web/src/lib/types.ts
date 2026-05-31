@@ -23,3 +23,41 @@ export type TranscriptEntry = {
 
 export type Appointment = {
   id: string;
+  callId: string | null;
+  googleEventId: string | null;
+  callerName: string | null;
+  callerPhone: string | null;
+  scheduledStart: string;
+  scheduledEnd: string;
+  status: "confirmed" | "cancelled";
+  createdAt: string;
+};
+
+export type CallDetail = Call & {
+  transcriptEntries: TranscriptEntry[];
+  appointments: Appointment[];
+};
+
+export type Analytics = {
+  totalCalls: number;
+  bookedAppointments: number;
+  avgDurationSec: number | null;
+  bookingConversionRate: number;
+};
+
+// Mirrors apps/backend/src/events.ts's CallEvent union -- kept in sync by hand
+// since the dashboard is a separate package from the backend.
+export type CallEvent =
+  | { type: "call.started"; callId: string; callerNumber: string; createdAt: string }
+  | { type: "call.ended"; callId: string; durationSec: number | null; createdAt: string }
+  | { type: "transcript.partial"; callId: string; speaker: Speaker; text: string; createdAt: string }
+  | { type: "transcript.final"; callId: string; speaker: Speaker; text: string; createdAt: string }
+  | {
+      type: "appointment.booked";
+      callId: string | null;
+      appointmentId: string;
+      start: string;
+      end: string;
+      createdAt: string;
+    }
+  | { type: "call.transferred"; callId: string; transferredTo: string; createdAt: string };
