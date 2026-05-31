@@ -10,3 +10,22 @@ function StatCard({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+export default async function AnalyticsPage() {
+  const analytics = await fetchBackend<Analytics>("/api/analytics");
+
+  return (
+    <div className="p-8">
+      <h1 className="text-2xl font-semibold mb-6">Analytics</h1>
+      <div className="grid gap-4 sm:grid-cols-4">
+        <StatCard label="Total calls" value={String(analytics.totalCalls)} />
+        <StatCard label="Booked appointments" value={String(analytics.bookedAppointments)} />
+        <StatCard label="Average call duration" value={formatDuration(analytics.avgDurationSec)} />
+        <StatCard
+          label="Booking conversion"
+          value={`${Math.round(analytics.bookingConversionRate * 100)}%`}
+        />
+      </div>
+    </div>
+  );
+}
